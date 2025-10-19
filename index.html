@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ブラウザOCRアプリ</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>ブラウザで文字認識 (OCR)</h1>
+        </header>
+        <main>
+            <video id="camera-view"></video>
+            <button id="capture-btn">読み取る</button>
+            <div class="result-box">
+                <h2>認識結果</h2>
+                <p id="status-area">カメラ映像から文字を読み取ります。</p>
+                <div id="result-area"></div>
+            </div>
+        </main>
+        <footer>
+            <p>&copy; 2025 OCR App Practice</p>
+        </footer>
+    </div>
+</body>
+
+</html>
