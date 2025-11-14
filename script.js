@@ -11,6 +11,7 @@ async function startCamera() {
             video: { facingMode: 'environment' } // 外側カメラを優先
         });
         videoElement.srcObject = stream;
+        videoElement.play();
         statusArea.textContent = '準備完了です。読み取りたい書類を写してください。';
     } catch (err) {
         console.error("カメラエラー:", err);
@@ -20,17 +21,17 @@ async function startCamera() {
 
 // ボタンがクリックされたらOCRを実行
 captureBtn.addEventListener('click', async () => {
-    statusArea.textContent = '画像をキャプチャしています...';
-    resultArea.innerHTML = ''; // 前回の結果をクリア
+    statusArea.textContent  = '画像をキャプチャしています...';
+    resultArea.innerHTML    = ''; // 前回の結果をクリア
 
     // 映像から1フレームを画像としてキャプチャする
-    const canvas    = document.createElement('canvas');
-    canvas.width    = videoElement.videoWidth;
-    canvas.height   = videoElement.videoHeight;
-    const context   = canvas.getContext('2d');
+    const canvas            = document.createElement('canvas');
+    canvas.width            = videoElement.videoWidth;
+    canvas.height           = videoElement.videoHeight;
+    const context           = canvas.getContext('2d');
     context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
 
-    statusArea.textContent = '文字を認識しています...（初回は時間がかかります）';
+    statusArea.textContent  = '文字を認識しています...（初回は時間がかかります）';
 
     // tessera.jsを使って文字認識を実行
     const { data: { text } } = await Tesseract.recognize(
