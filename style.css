@@ -24,23 +24,61 @@ h1 {
     color: #1a73e8;
 }
 
-#camera-view {
+/* 映像と画像を囲むラッパー */
+.media-wrapper {
+    width: 100%;
+    /* 高さが変わらないように最低限の高さを確保しても良いが今回はauto */
+    margin-bottom: 15px;
+}
+
+#camera-view, #snapshot {
     width: 100%;
     height: auto;
     border: 2px solid #ddd;
     border-radius: 4px;
-    background-color: #000;
+    background-color: #000; /* 黒背景で統一 */
+    display: block; /* 余白調整 */
 }
 
-#capture-btn {
+/* ボタンエリア */
+.controls {
+    display: flex;
+    justify-content: center;
+    gap: 15px; /* ボタン間の隙間 */
     margin-top: 15px;
+}
+
+button {
     padding: 10px 20px;
     font-size: 16px;
-    background-color: #1a73e8;
-    color: #fff;
     border: none;
     border-radius: 4px;
     cursor: pointer;
+    color: #fff;
+    min-width: 120px;
+}
+
+#capture-btn {
+    background-color: #1a73e8;
+}
+
+#capture-btn:hover:not(:disabled) {
+    background-color: #1558b3;
+}
+
+#clear-btn {
+    background-color: #dc3545; /* 赤系 */
+}
+
+#clear-btn:hover:not(:disabled) {
+    background-color: #a71d2a;
+}
+
+/* 非活性時のスタイル */
+button:disabled {
+    background-color: #ccc !important;
+    cursor: not-allowed;
+    opacity: 0.7;
 }
 
 .result-box {
@@ -51,12 +89,16 @@ h1 {
     text-align: left;
     min-height: 100px;
 }
-#capture-btn:hover {
-    background-color: #1558b3;
-}
 
 footer {
     margin-top: 30px;
     font-size: 12px;
     color: #888;
+}
+
+/* スマホ対応 */
+@media (max-width: 600px) {
+    body { padding: 10px; }
+    .container { padding: 20px; width: auto; }
+    button { width: 48%; } /* ボタンを横並びで半々くらいに */
 }

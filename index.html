@@ -1,21 +1,27 @@
 <!DOCTYPE html>
 <html lang="ja">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ブラウザOCRアプリ</title>
     <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
     <div class="container">
         <header>
             <h1>ブラウザで文字認識 (OCR)</h1>
         </header>
         <main>
-            <video id="camera-view"></video>
-            <button id="capture-btn">読み取る</button>
+            <div class="media-wrapper">
+                <video id="camera-view" autoplay muted playsinline></video>
+                <canvas id="snapshot" style="display: none;"></canvas>
+            </div>
+            
+            <div class="controls">
+                <button id="capture-btn">読み取る</button>
+                <button id="clear-btn" disabled>クリア</button>
+            </div>
+            
             <div class="result-box">
                 <h2>認識結果</h2>
                 <p id="status-area">カメラ映像から文字を読み取ります。</p>
@@ -26,8 +32,8 @@
             <p>&copy; 2025 OCR App Practice</p>
         </footer>
     </div>
-    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js'></script>
+
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <script src="script.js" defer></script>
 </body>
-
 </html>
