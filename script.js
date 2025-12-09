@@ -60,6 +60,39 @@ function applyGrayscale(canvas) {
     ctx.putImageData(imageData, 0, 0);
 }
 
+// 二値化処理を行う関数
+// threshold: しきい値（0〜255）。デフォルトは128（中間の明るさ）
+function applyBinarization(canvas, threshold = 128) {
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    // 全画素を走査
+    for (let i = 0; i < data.length; i += 4) {
+        // すでにグレースケール化済みなので、R, G, Bのどれを見ても同じ値です。
+        // ここでは代表してR（data[i]）の値を使います。
+        const gray = data[i];
+
+        // 【判定ロジック】
+        // しきい値より大きければ白(255)、そうでなければ黒(0)
+        let val;
+        if (gray >= threshold) {
+            val = 255; // 白
+        } else {
+            val = 0;   // 黒
+        }
+
+        // 白か黒か決まった値をRGBすべてに代入
+        data[i]     = val;
+        data[i + 1] = val;
+        data[i + 2] = val;
+        // alpha（透明度）はそのまま
+    }
+
+    // 書き換えたデータをCanvasに戻す
+    ctx.putImageData(imageData, 0, 0);
+}
+
 // 読み取るボタン処理
 captureBtn.addEventListener('click', async () => {
     // 1. UI状態の更新（読み取りボタン無効化、クリアボタン有効化）
@@ -79,6 +112,10 @@ captureBtn.addEventListener('click', async () => {
 
     // グレースケール化を実行
     applyGrayscale(canvasElement);
+
+    // 二値化（白黒）を実行
+    // しきい値は「128」
+    applyBinarization(canvasElement, 128);
 
     // 4. 表示の切り替え（Videoを隠してCanvasを表示）
     videoElement.style.display  = 'none';
