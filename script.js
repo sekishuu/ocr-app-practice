@@ -1,16 +1,24 @@
 // HTMLの部品を取得
 const videoElement  = document.getElementById('camera-view');
-const canvasElement = document.getElementById('snapshot'); // HTMLに追加したCanvas
+const canvasElement = document.getElementById('snapshot');      // HTMLに追加したCanvas
 const captureBtn    = document.getElementById('capture-btn');
 const clearBtn      = document.getElementById('clear-btn');
 const statusArea    = document.getElementById('status-area');
 const resultArea    = document.getElementById('result-area');
+const cropGuide     = document.getElementById('crop-guide');    // 【追加】ガイド枠を取得
+const isPortrait = window.innerWidth < window.innerHeight;      // スマホが縦持ち（画面の幅 < 高さ）なら、数値を逆にする
 
 // カメラを起動する処理
 async function startCamera() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: 'environment' } 
+            video: { 
+                facingMode: 'environment',
+                // 【追加】解像度をなるべく高くリクエストして、文字をくっきりさせる
+                // idealは可能な限りこの数値に近づけるという命令。カメラ性能が低ければ可能な最大値で出力。（エラーにはならない）
+                width:  { ideal: isPortrait ? 1080 : 1920 },    // 縦なら幅を狭く
+                height: { ideal: isPortrait ? 1920 : 1080 }     // 縦なら高さを長く
+            } 
         });
         videoElement.srcObject  = stream;
         videoElement.play();
@@ -21,6 +29,7 @@ async function startCamera() {
     }
 }
 
+// グレースケール化処理を行う関数
 function applyGrayscale(canvas) {
     const ctx             = canvas.getContext('2d');
     
@@ -98,17 +107,41 @@ captureBtn.addEventListener('click', async () => {
     // 1. UI状態の更新（読み取りボタン無効化、クリアボタン有効化）
     captureBtn.disabled         = true;
     clearBtn.disabled           = false;
-    
     statusArea.textContent      = '画像をキャプチャしました。文字認識を開始します...';
     resultArea.innerHTML        = ''; 
 
-    // 2. Canvasのサイズをビデオに合わせる
-    canvasElement.width         = videoElement.videoWidth;
-    canvasElement.height        = videoElement.videoHeight;
+    // --- トリミング計算 ---
+
+    // A. 画面上でのサイズと位置（座標）を取得
+    const videoRect = videoElement.getBoundingClientRect(); // ビデオの見た目のサイズ
+    const guideRect = cropGuide.getBoundingClientRect();    // 赤枠の見た目のサイズ
+
+    // B. 倍率を計算（実際のカメラ解像度 ÷ 画面上の表示サイズ）
+    // 例: カメラが1920pxで、画面表示が384pxなら、倍率は5倍
+    const ratioX = videoElement.videoWidth / videoRect.width;
+    const ratioY = videoElement.videoHeight / videoRect.height;
+
+    // C. 切り抜く座標とサイズを計算（実際の解像度ベースに変換）
+    // (枠の左座標 - ビデオの左座標) * 倍率 = カメラ画像内でのX座標
+    const cropX = (guideRect.left - videoRect.left) * ratioX;
+    const cropY = (guideRect.top - videoRect.top) * ratioY;
+    const cropW = guideRect.width * ratioX;
+    const cropH = guideRect.height * ratioY;
+
+    // 2. Canvasのサイズを「ビデオ全体」ではなく「切り抜くサイズ」に合わせる
+    canvasElement.width  = cropW;
+    canvasElement.height = cropH;
     
-    // 3. 映像を描画
+    // 3. 映像を切り抜いて描画
     const context = canvasElement.getContext('2d');
-    context.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+    
+    // drawImage(元画像, 元画像の開始X, 元画像の開始Y, 元画像の幅, 元画像の高さ, CanvasのX, CanvasのY, Canvasの幅, Canvasの高さ)
+    // 9個の引数を使ってトリミングと貼り付けを行う
+    context.drawImage(
+        videoElement,
+        cropX, cropY, cropW, cropH, // 切り抜き範囲
+        0, 0, cropW, cropH          // 貼り付け範囲（0,0から全体に）
+    );
 
     // グレースケール化を実行
     applyGrayscale(canvasElement);
@@ -119,6 +152,7 @@ captureBtn.addEventListener('click', async () => {
 
     // 4. 表示の切り替え（Videoを隠してCanvasを表示）
     videoElement.style.display  = 'none';
+    cropGuide.style.display     = 'none'; // 【追加】撮影後はガイド枠も消す
     canvasElement.style.display = 'block';
 
     // 5. OCR実行
@@ -154,6 +188,7 @@ clearBtn.addEventListener('click', () => {
     
     // 2. 表示のリセット（Canvasを隠してVideoを表示）
     videoElement.style.display  = 'block';
+    cropGuide.style.display     = 'flex'; // 【追加】ガイド枠を再表示（flexで中央揃え維持）
     canvasElement.style.display = 'none';
 
     // 3. テキストとステータスのクリア

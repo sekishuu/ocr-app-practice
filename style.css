@@ -29,6 +29,13 @@ h1 {
     width: 100%;
     /* 高さが変わらないように最低限の高さを確保しても良いが今回はauto */
     margin-bottom: 15px;
+    
+    /* 【変更】ガイド枠を重ねるために必須の設定です */
+    /* これがないと、ガイド枠が映像の外に飛び出してしまいます */
+    position: relative;
+    
+    background-color: #000;
+    overflow: hidden; /* 枠外のはみ出し防止 */
 }
 
 #camera-view, #snapshot {
@@ -39,6 +46,45 @@ h1 {
     background-color: #000; /* 黒背景で統一 */
     display: block; /* 余白調整 */
 }
+
+/* --- 【追加】トリミングガイド枠のデザイン --- */
+#crop-guide {
+    /* 親要素(.media-wrapper)を基準に絶対配置します */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%); /* 画面のど真ん中に持ってくる呪文 */
+    
+    width: 85%; /* スマホ画面の横幅85%を使う */
+    
+    /* 【重要】運転免許証の比率 (ID-1規格: 85.6mm x 54mm) */
+    /* aspect-ratioを使うと、幅に合わせて高さが自動計算されます */
+    aspect-ratio: 85.6 / 54; 
+    
+    border: 2px solid #ff3b30; /* 赤い枠線 */
+    border-radius: 10px;       /* 免許証の角丸に合わせる */
+    
+    /* 枠の外側を暗くするテクニック（巨大な影を落としています） */
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6); 
+    
+    /* 【重要】これがないと、枠が邪魔で画面タップができなくなります */
+    pointer-events: none; 
+    
+    z-index: 10; /* 映像より手前に表示 */
+    
+    /* 案内テキストの位置合わせ */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.guide-text {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 12px;
+    font-weight: bold;
+    text-shadow: 1px 1px 2px black;
+}
+/* --- 追加ここまで --- */
 
 /* ボタンエリア */
 .controls {
