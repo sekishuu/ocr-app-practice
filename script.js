@@ -8,8 +8,21 @@ const resultArea    = document.getElementById('result-area');
 const cropGuide     = document.getElementById('crop-guide');    // 【追加】ガイド枠を取得
 const isPortrait = window.innerWidth < window.innerHeight;      // スマホが縦持ち（画面の幅 < 高さ）なら、数値を逆にする
 
+// OpenCVの読み込み状態管理フラグ
+let isOpenCvReady = false;
+
+// HTMLで指定した onload="onOpenCvReady();" から呼ばれる関数
+function onOpenCvReady()
+{
+    console.log('OpenCV.js is ready');
+    isOpenCvReady = true;
+    statusArea.textContent = '準備完了です。読み取りたい書類を写してください。';
+}
+
 // カメラを起動する処理
-async function startCamera() {
+async function startCamera()
+{
+    statusArea.textContent = 'システムを起動中...'; // 初期表示
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ 
             video: { 
@@ -22,7 +35,15 @@ async function startCamera() {
         });
         videoElement.srcObject  = stream;
         videoElement.play();
-        statusArea.textContent  = '準備完了です。読み取りたい書類を写してください。';
+        // OpenCVの準備待ちかどうかでメッセージを変える
+        if (isOpenCvReady)
+        {
+            statusArea.textContent  = '準備完了です。読み取りたい書類を写してください。';
+        }
+        else
+            {
+            statusArea.textContent  = '画像処理エンジン(OpenCV)を読み込んでいます...';
+        }
     } catch (err) {
         console.error("カメラエラー:", err);
         statusArea.textContent  = 'エラー: カメラを起動できませんでした。HTTPS環境か確認してください。';
@@ -42,8 +63,8 @@ function applyGrayscale(canvas) {
     // 【2. ループ処理】
     // ここがポイントです。「i += 4」になっています。
     // 数字4つで「1つの画素」なので、4歩ずつ進みながら処理します。
-    for (let i = 0; i < data.length; i += 4) {
-
+    for (let i = 0; i < data.length; i += 4)
+    {
         // 【3. 色の取り出し】
         // 現在地(i)が赤、隣(i+1)が緑、その隣(i+2)が青です。
         const r          = data[i];     
@@ -71,13 +92,15 @@ function applyGrayscale(canvas) {
 
 // 二値化処理を行う関数
 // threshold: しきい値（0〜255）。デフォルトは128（中間の明るさ）
-function applyBinarization(canvas, threshold = 128) {
+function applyBinarization(canvas, threshold = 128)
+{
     const ctx = canvas.getContext('2d');
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
     // 全画素を走査
-    for (let i = 0; i < data.length; i += 4) {
+    for (let i = 0; i < data.length; i += 4)
+    {
         // すでにグレースケール化済みなので、R, G, Bのどれを見ても同じ値です。
         // ここでは代表してR（data[i]）の値を使います。
         const gray = data[i];
@@ -85,9 +108,12 @@ function applyBinarization(canvas, threshold = 128) {
         // 【判定ロジック】
         // しきい値より大きければ白(255)、そうでなければ黒(0)
         let val;
-        if (gray >= threshold) {
+        if (gray >= threshold)
+        {
             val = 255; // 白
-        } else {
+        }
+        else
+        {
             val = 0;   // 黒
         }
 
@@ -102,12 +128,68 @@ function applyBinarization(canvas, threshold = 128) {
     ctx.putImageData(imageData, 0, 0);
 }
 
+function applyPerspectiveCorrection(canvas)
+{
+    // OpenCVの準備チェック
+    if (!isOpenCvReady)
+    {
+        console.warn("OpenCVがまだ準備できていません。");
+        return;
+    }
+
+    // 各処理に使う変数を宣言
+    let src = null;      // 元の画像データ
+    let gray = null;     // グレースケール画像用
+    let blurred = null;  // ぼかし処理後の画像用
+    let edges = null;    // エッジ（線画）画像用
+
+    try {
+        // 画像の読み込み
+        // src は「元のカラー画像」
+        src         = cv.imread(canvas);
+        gray        = new cv.Mat();
+        blurred     = new cv.Mat();
+        edges       = new cv.Mat();
+
+        // 1. グレースケール化
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+
+        // 2. ぼかし処理
+        // 5×5の範囲内の色の平均値を計算して色を変更する
+        let ksize = new cv.Size(5, 5);
+        cv.GaussianBlur(gray, blurred, ksize, 0, 0, cv.BORDER_DEFAULT);
+
+        // 3. 輪郭検出
+        cv.Canny(blurred, edges, 60, 185);
+
+        // 結果を表示
+        cv.imshow(canvas, edges);
+
+    } catch (err) {
+        console.error("OpenCV処理エラー:", err);
+    } finally {
+        // メモリ解放
+        if (src) src.delete();
+        if (gray) gray.delete();
+        if (blurred) blurred.delete();
+        if (edges) edges.delete();
+    }
+}
+
+
 // 読み取るボタン処理
 captureBtn.addEventListener('click', async () => {
+    // 準備チェック
+    if (!isOpenCvReady)
+    {
+        alert("画像処理エンジンの読み込み中です。少々お待ちください。");
+        return;
+    }
+
     // 1. UI状態の更新（読み取りボタン無効化、クリアボタン有効化）
     captureBtn.disabled         = true;
     clearBtn.disabled           = false;
-    statusArea.textContent      = '画像をキャプチャしました。文字認識を開始します...';
+    statusArea.textContent      = '画像をキャプチャしました。補正と文字認識を開始します...';
     resultArea.innerHTML        = ''; 
 
     // --- トリミング計算 ---
@@ -132,7 +214,7 @@ captureBtn.addEventListener('click', async () => {
     canvasElement.width  = cropW;
     canvasElement.height = cropH;
     
-    // 3. 映像を切り抜いて描画
+    // 3. 映像を切り抜いて描画（一次トリミング：固定枠）
     const context = canvasElement.getContext('2d');
     
     // drawImage(元画像, 元画像の開始X, 元画像の開始Y, 元画像の幅, 元画像の高さ, CanvasのX, CanvasのY, Canvasの幅, Canvasの高さ)
@@ -143,12 +225,15 @@ captureBtn.addEventListener('click', async () => {
         0, 0, cropW, cropH          // 貼り付け範囲（0,0から全体に）
     );
 
+    // OpenCVによる画像補正
+    applyPerspectiveCorrection(canvasElement);
+
     // グレースケール化を実行
-    applyGrayscale(canvasElement);
+    // applyGrayscale(canvasElement);
 
     // 二値化（白黒）を実行
     // しきい値は「128」
-    applyBinarization(canvasElement, 128);
+    // applyBinarization(canvasElement, 128);
 
     // 4. 表示の切り替え（Videoを隠してCanvasを表示）
     videoElement.style.display  = 'none';
