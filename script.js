@@ -6,7 +6,7 @@ const clearBtn      = document.getElementById('clear-btn');
 const statusArea    = document.getElementById('status-area');
 const resultArea    = document.getElementById('result-area');
 const cropGuide     = document.getElementById('crop-guide');    // 【追加】ガイド枠を取得
-const isPortrait = window.innerWidth < window.innerHeight;      // スマホが縦持ち（画面の幅 < 高さ）なら、数値を逆にする
+const isPortrait    = window.innerWidth < window.innerHeight;   // スマホが縦持ち（画面の幅 < 高さ）なら、数値を逆にする
 
 // OpenCVの読み込み状態管理フラグ
 let isOpenCvReady = false;
@@ -138,32 +138,140 @@ function applyPerspectiveCorrection(canvas)
     }
 
     // 各処理に使う変数を宣言
-    let src = null;      // 元の画像データ
-    let gray = null;     // グレースケール画像用
-    let blurred = null;  // ぼかし処理後の画像用
-    let edges = null;    // エッジ（線画）画像用
+    let src         = null;     // 元の画像データ
+    let gray        = null;     // グレースケール画像用
+    let blurred     = null;     // ぼかし処理後の画像用
+    let edges       = null;     // エッジ（線画）画像用
 
-    try {
-        // 画像の読み込み
-        // src は「元のカラー画像」
-        src         = cv.imread(canvas);
-        gray        = new cv.Mat();
-        blurred     = new cv.Mat();
-        edges       = new cv.Mat();
+    let dst         = null;     // 画面に表示する結果用（ここに赤枠を描く）
+    let contours    = null;     // 見つかった輪郭のリスト
+    let hierarchy   = null;     // 輪郭の階層情報（今回は使いませんが必須）
+    let approx      = null;     // 輪郭を近似（カクカクに）した結果用
+
+    try{
+        src                 = cv.imread(canvas);    // 元のカラー画像
+        dst                 = src.clone();          // 元画像をコピー
+        gray                = new cv.Mat();         // グレースケール化後の画像
+        blurred             = new cv.Mat();         //　ぼかし処理後の画像
+        edges               = new cv.Mat();         //　輪郭抽出処理後の画像
+        contours            = new cv.MatVector();   //　見つかった全ての輪郭をリストで保存
+        hierarchy           = new cv.Mat();         //　輪郭の親子関係（Aの中にBがある等）が入る箱
 
         // 1. グレースケール化
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
 
         // 2. ぼかし処理
         // 5×5の範囲内の色の平均値を計算して色を変更する
-        let ksize = new cv.Size(5, 5);
+        let ksize           = new cv.Size(5, 5);
         cv.GaussianBlur(gray, blurred, ksize, 0, 0, cv.BORDER_DEFAULT);
 
         // 3. 輪郭検出
         cv.Canny(blurred, edges, 60, 185);
+        
+        // 4. 輪郭を構成する点群を抽出する
+        cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-        // 結果を表示
-        cv.imshow(canvas, edges);
+        // 5. 一番大きな四角形を探すループ処理
+        let maxArea         = 0;                                      // これまでに見つかった最大の面積
+        let maxContourIndex = -1;                                     // 最大の面積を持つ輪郭の番号
+
+        const minArea       = canvas.width * canvas.height * 0.05;    // 画面全体に対する面積の割合（5%以下の小さなゴミは無視する設定）
+
+        for (let i = 0; i < contours.size(); ++i)       // contours.sizeは見つかった図形の数
+        {
+            let cnt         = contours.get(i);          // i番目の輪郭を取り出す
+            let area        = cv.contourArea(cnt);      // その輪郭の面積を計算
+            
+            if (area > minArea)
+            {
+                let peri        = cv.arcLength(cnt, true);  // 輪郭の周囲の長さを計算
+                let tmpApprox   = new cv.Mat();             // 計算用の一時的な変数を作成
+            
+                cv.approxPolyDP(cnt, tmpApprox, 0.02 * peri, true); // 輪郭を単純化する
+
+                if (tmpApprox.rows === 4) // 頂点の数が4つ（＝四角形）かどうか判定
+                {
+                    if (area > maxArea) // これまでで一番大きい四角形か判定
+                    {
+                        maxArea         = area;
+                        maxContourIndex = i;
+                        
+                        if (approx)
+                        {
+                            approx.delete();   // 古いapproxがあれば削除し、新しい一番を保存
+                        }
+                        approx = tmpApprox;    // 最大のものは残す
+                    }
+                    else
+                    {
+                        tmpApprox.delete();    // 最大でないものは削除
+                    }
+                }
+                else
+                {
+                    tmpApprox.delete();  // 四角形でないものは削除
+                }
+            }
+            cnt.delete();   // メモリ解放
+        }
+
+        // 6. 見つかった結果を描画
+        if (maxContourIndex !== -1 && approx)
+        {
+            // === 修正：ここから頂点ソート処理を追加 ===
+            // 理由：approxの中身は順序がバラバラなため、ここで「左上, 右上, 右下, 左下」に並び替える必要があります。
+            // これをやらないと、画像の補正をしたときに画像がねじれたり反転したりします。
+
+            console.log("--- 頂点データの抽出とソートを開始 ---");
+
+            // Matから生の座標データを取得します。
+            // data32Sは、[x1, y1, x2, y2, x3, y3, x4, y4] という1次元の配列としてデータを持っています。
+            let rawData = approx.data32S;
+
+            // 扱いやすいように {x, y} のオブジェクトの配列に変換します
+            let corners = [
+                { x: rawData[0], y: rawData[1] },
+                { x: rawData[2], y: rawData[3] },
+                { x: rawData[4], y: rawData[5] },
+                { x: rawData[6], y: rawData[7] }
+            ];
+
+            // ソート処理:
+            // まずY座標（高さ）でソートして、「上の2点」と「下の2点」に分けます。
+            // ※注意: これは画像が極端に回転（45度以上など）していないことを前提とした簡易ロジックです。
+            corners.sort((a, b) => a.y - b.y);
+
+            // 上の2点（Yが小さい2つ）をX座標でソート -> [左上, 右上]
+            let topPoints = corners.slice(0, 2).sort((a, b) => a.x - b.x);
+            
+            // 下の2点（Yが大きい2つ）をX座標でソート -> [左下, 右下]
+            let bottomPoints = corners.slice(2, 4).sort((a, b) => a.x - b.x);
+
+            // 最終的な順序: 左上 -> 右上 -> 右下 -> 左下
+            // OpenCVの透視変換の標準的な順序に合わせます。（Z型ではなく、時計回り順にすることが多いですが、ここでは目的の順序を作ります）
+            let sortedCorners = [
+                topPoints[0],    // 左上
+                topPoints[1],    // 右上
+                bottomPoints[1], // 右下 (Xが大きい方)
+                bottomPoints[0]  // 左下 (Xが小さい方)
+            ];
+
+            console.log("抽出・ソートされた頂点:", sortedCorners);
+            // ==========================================
+
+
+            let color       = new cv.Scalar(255, 0, 0, 255);  // 赤色を定義 (R=255, G=0, B=0, Alpha=255)
+            let points      = new cv.MatVector();            // 描画用のリストを作成（polylines関数はリスト形式を要求するため）
+            
+            points.push_back(approx);
+            
+            // true: 線を閉じる（四角形にする）、4: 線の太さ
+            cv.polylines(dst, points, true, color, 4);  // dst画像の上に、赤い線を書き込む
+            
+            points.delete();                            // リストは不要なので削除
+        }
+
+        cv.imshow(canvas, dst);     // 結果を表示
 
     } catch (err) {
         console.error("OpenCV処理エラー:", err);
@@ -173,6 +281,10 @@ function applyPerspectiveCorrection(canvas)
         if (gray) gray.delete();
         if (blurred) blurred.delete();
         if (edges) edges.delete();
+        if (dst) dst.delete();
+        if (contours) contours.delete();
+        if (hierarchy) hierarchy.delete();
+        if (approx) approx.delete();
     }
 }
 
