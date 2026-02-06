@@ -166,7 +166,8 @@ function applyPerspectiveCorrection(canvas)
         cv.GaussianBlur(gray, blurred, ksize, 0, 0, cv.BORDER_DEFAULT);
 
         // 3. 輪郭検出
-        cv.Canny(blurred, edges, 60, 185);
+//      cv.Canny(blurred, edges, 60, 185); // 元の値
+        cv.Canny(blurred, edges, 5, 20);
         
         // 4. 輪郭を構成する点群を抽出する
         cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
@@ -187,7 +188,8 @@ function applyPerspectiveCorrection(canvas)
                 let peri        = cv.arcLength(cnt, true);  // 輪郭の周囲の長さを計算
                 let tmpApprox   = new cv.Mat();             // 計算用の一時的な変数を作成
             
-                cv.approxPolyDP(cnt, tmpApprox, 0.02 * peri, true); // 輪郭を単純化する
+//              cv.approxPolyDP(cnt, tmpApprox, 0.02 * peri, true); // 輪郭を単純化する(元の値)
+                cv.approxPolyDP(cnt, tmpApprox, 0.08 * peri, true); // 輪郭を単純化する
 
                 if (tmpApprox.rows === 4) // 頂点の数が4つ（＝四角形）かどうか判定
                 {
@@ -216,62 +218,21 @@ function applyPerspectiveCorrection(canvas)
         }
 
         // 6. 見つかった結果を描画
-        if (maxContourIndex !== -1 && approx)
+        if (maxContourIndex !== -1 && approx) 
         {
-            // === 修正：ここから頂点ソート処理を追加 ===
-            // 理由：approxの中身は順序がバラバラなため、ここで「左上, 右上, 右下, 左下」に並び替える必要があります。
-            // これをやらないと、画像の補正をしたときに画像がねじれたり反転したりします。
+            let color   = new cv.Scalar(255, 0, 0, 255);    // 赤色を定義 (R=255, G=0, B=0, Alpha=255)
+            let points  = new cv.MatVector();               // 描画用のリストを作成（polylines関数はリスト形式を要求するため）
 
-            console.log("--- 頂点データの抽出とソートを開始 ---");
-
-            // Matから生の座標データを取得します。
-            // data32Sは、[x1, y1, x2, y2, x3, y3, x4, y4] という1次元の配列としてデータを持っています。
-            let rawData = approx.data32S;
-
-            // 扱いやすいように {x, y} のオブジェクトの配列に変換します
-            let corners = [
-                { x: rawData[0], y: rawData[1] },
-                { x: rawData[2], y: rawData[3] },
-                { x: rawData[4], y: rawData[5] },
-                { x: rawData[6], y: rawData[7] }
-            ];
-
-            // ソート処理:
-            // まずY座標（高さ）でソートして、「上の2点」と「下の2点」に分けます。
-            // ※注意: これは画像が極端に回転（45度以上など）していないことを前提とした簡易ロジックです。
-            corners.sort((a, b) => a.y - b.y);
-
-            // 上の2点（Yが小さい2つ）をX座標でソート -> [左上, 右上]
-            let topPoints = corners.slice(0, 2).sort((a, b) => a.x - b.x);
-            
-            // 下の2点（Yが大きい2つ）をX座標でソート -> [左下, 右下]
-            let bottomPoints = corners.slice(2, 4).sort((a, b) => a.x - b.x);
-
-            // 最終的な順序: 左上 -> 右上 -> 右下 -> 左下
-            // OpenCVの透視変換の標準的な順序に合わせます。（Z型ではなく、時計回り順にすることが多いですが、ここでは目的の順序を作ります）
-            let sortedCorners = [
-                topPoints[0],    // 左上
-                topPoints[1],    // 右上
-                bottomPoints[1], // 右下 (Xが大きい方)
-                bottomPoints[0]  // 左下 (Xが小さい方)
-            ];
-
-            console.log("抽出・ソートされた頂点:", sortedCorners);
-            // ==========================================
-
-
-            let color       = new cv.Scalar(255, 0, 0, 255);  // 赤色を定義 (R=255, G=0, B=0, Alpha=255)
-            let points      = new cv.MatVector();            // 描画用のリストを作成（polylines関数はリスト形式を要求するため）
-            
             points.push_back(approx);
             
             // true: 線を閉じる（四角形にする）、4: 線の太さ
-            cv.polylines(dst, points, true, color, 4);  // dst画像の上に、赤い線を書き込む
+            cv.polylines(dst, points, true, color, 4);      // dst(元のカラー画像)の上に、赤い線を書き込む
             
-            points.delete();                            // リストは不要なので削除
+            points.delete();                                // 処理後は不要なので削除
         }
 
         cv.imshow(canvas, dst);     // 結果を表示
+        // cv.imshow(canvas, edges);     // 結果を表示
 
     } catch (err) {
         console.error("OpenCV処理エラー:", err);
@@ -292,11 +253,11 @@ function applyPerspectiveCorrection(canvas)
 // 読み取るボタン処理
 captureBtn.addEventListener('click', async () => {
     // 準備チェック
-    if (!isOpenCvReady)
-    {
-        alert("画像処理エンジンの読み込み中です。少々お待ちください。");
-        return;
-    }
+    // if (!isOpenCvReady)
+    // {
+    //     alert("画像処理エンジンの読み込み中です。少々お待ちください。");
+    //     return;
+    // }
 
     // 1. UI状態の更新（読み取りボタン無効化、クリアボタン有効化）
     captureBtn.disabled         = true;
