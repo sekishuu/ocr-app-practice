@@ -221,7 +221,7 @@ function applyPerspectiveCorrection(canvas)
             }
             cnt.delete();   // メモリ解放
         }
-
+/* // --- 以前の描画処理（コメントアウト開始） ---
         // 6. 見つかった結果を描画
         if (maxContourIndex !== -1 && approx)
         {
@@ -238,7 +238,67 @@ function applyPerspectiveCorrection(canvas)
 
         cv.imshow(canvas, dst);     // 結果を表示
         // cv.imshow(canvas, edges);     // 結果を表示
+// --- 以前の描画処理（コメントアウト終了） ---
+        */
 
+// =========================================================
+        // ★ステップ①：4つの頂点を整理して変換元の座標を作る
+        // =========================================================
+
+        if (maxContourIndex !== -1 && approx)
+        {
+            console.log("四角形を検出しました。頂点の整理を開始します。");
+
+            // 1-1. OpenCVのデータを扱いやすいJavaScriptの配列(x, y)に変換
+            // approxの中身は [x1, y1, x2, y2, x3, y3, x4, y4] のように並んでいます
+            let points = [];
+            for (let row = 0; row < 4; row++)
+            {
+                points.push({
+                    x: approx.data32S[row * 2],
+                    y: approx.data32S[row * 2 + 1]
+                });
+            }
+
+            // 1-2. ロバストな並べ替え（合計と差を使う手法）
+                // これにより、書類が傾いていても正確に「左上・右上・右下・左下」を判定できます。
+
+                // 左上 (TL): x + y が最小
+                let tl = points.reduce((prev, curr) => (prev.x + prev.y) < (curr.x + curr.y) ? prev : curr);
+
+                // 右下 (BR): x + y が最大
+                let br = points.reduce((prev, curr) => (prev.x + prev.y) > (curr.x + curr.y) ? prev : curr);
+
+                // 右上 (TR): x - y が最大 (Xが大きくYが小さい)
+                let tr = points.reduce((prev, curr) => (prev.x - prev.y) > (curr.x - curr.y) ? prev : curr);
+
+                // 左下 (BL): x - y が最小 (Xが小さくYが大きい)
+                let bl = points.reduce((prev, curr) => (prev.x - prev.y) < (curr.x - curr.y) ? prev : curr);
+
+                // 【重要】順序を「時計回り（左上→右上→右下→左下）」に統一します
+                // ※あなたのコードはZ順（左上・右上・左下・右下）でしたが、
+                // 次のステップで作る「変換後の座標」と合わせやすい時計回りが業界標準です。
+                let orderedPoints = [tl, tr, br, bl];
+
+            // 1-3. 変換元の座標配列 (srcTri) を作成
+            // OpenCVの「cv.matFromArray」を使って、Float32型の行列データを作ります。
+            // ※ ここではまだ「回転判定」は入れていません。基本の並び順で登録します。
+
+            srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                orderedPoints[0].x, orderedPoints[0].y, // 左上
+                orderedPoints[1].x, orderedPoints[1].y, // 右上
+                orderedPoints[2].x, orderedPoints[2].y, // 左下
+                orderedPoints[3].x, orderedPoints[3].y  // 右下
+            ]);
+
+            console.log("ステップ①完了: 変換元の座標を作成しました。");
+        }
+        else
+        {
+            console.log("四角形が見つかりませんでした。");
+            // 見つからない場合は元の画像を表示して終了
+            cv.imshow(canvas, src);
+        }
     }
     catch (err)
     {
