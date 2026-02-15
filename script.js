@@ -23,15 +23,17 @@ function onOpenCvReady()
 async function startCamera()
 {
     statusArea.textContent = 'システムを起動中...'; // 初期表示
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { 
+    try
+    {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video:
+            {
                 facingMode: 'environment',
                 // 【追加】解像度をなるべく高くリクエストして、文字をくっきりさせる
                 // idealは可能な限りこの数値に近づけるという命令。カメラ性能が低ければ可能な最大値で出力。（エラーにはならない）
                 width:  { ideal: isPortrait ? 1080 : 1920 },    // 縦なら幅を狭く
                 height: { ideal: isPortrait ? 1920 : 1080 }     // 縦なら高さを長く
-            } 
+            }
         });
         videoElement.srcObject  = stream;
         videoElement.play();
@@ -44,7 +46,9 @@ async function startCamera()
             {
             statusArea.textContent  = '画像処理エンジン(OpenCV)を読み込んでいます...';
         }
-    } catch (err) {
+    }
+    catch (err)
+    {
         console.error("カメラエラー:", err);
         statusArea.textContent  = 'エラー: カメラを起動できませんでした。HTTPS環境か確認してください。';
     }
@@ -52,13 +56,13 @@ async function startCamera()
 
 // グレースケール化処理を行う関数
 function applyGrayscale(canvas) {
-    const ctx             = canvas.getContext('2d');
-    
+    const ctx            = canvas.getContext('2d');
+
     // 【1. データの取得】
     // キャンバス上の「左上(0,0)」から「右下(width, height)」までの
     // 全ての画素データを「数字の列」として引っ張り出します。
     const imageData      = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data           = imageData.data; 
+    const data           = imageData.data;
 
     // 【2. ループ処理】
     // ここがポイントです。「i += 4」になっています。
@@ -67,11 +71,11 @@ function applyGrayscale(canvas) {
     {
         // 【3. 色の取り出し】
         // 現在地(i)が赤、隣(i+1)が緑、その隣(i+2)が青です。
-        const r          = data[i];     
-        const g          = data[i + 1]; 
-        const b          = data[i + 2]; 
+        const r          = data[i];
+        const g          = data[i + 1];
+        const b          = data[i + 2];
         // data[i+3] は透明度なので、今回は無視します。
-        
+
         // 【4. グレーの計算】
         // 3つの色を混ぜて、1つの「明るさの値(gray)」を作ります。
         // 単純な割り算ではなく、人間の目に自然に見える比率(NTSC係数)を掛けています。
@@ -148,14 +152,15 @@ function applyPerspectiveCorrection(canvas)
     let hierarchy   = null;     // 輪郭の階層情報（今回は使いませんが必須）
     let approx      = null;     // 輪郭を近似（カクカクに）した結果用
 
-    try{
+    try
+    {
         src                 = cv.imread(canvas);    // 元のカラー画像
         dst                 = src.clone();          // 元画像をコピー
         gray                = new cv.Mat();         // グレースケール化後の画像
-        blurred             = new cv.Mat();         //　ぼかし処理後の画像
-        edges               = new cv.Mat();         //　輪郭抽出処理後の画像
-        contours            = new cv.MatVector();   //　見つかった全ての輪郭をリストで保存
-        hierarchy           = new cv.Mat();         //　輪郭の親子関係（Aの中にBがある等）が入る箱
+        blurred             = new cv.Mat();         // ぼかし処理後の画像
+        edges               = new cv.Mat();         // 輪郭抽出処理後の画像
+        contours            = new cv.MatVector();   // 見つかった全ての輪郭をリストで保存
+        hierarchy           = new cv.Mat();         // 輪郭の親子関係（Aの中にBがある等）が入る箱
 
         // 1. グレースケール化
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
@@ -168,7 +173,7 @@ function applyPerspectiveCorrection(canvas)
         // 3. 輪郭検出
 //      cv.Canny(blurred, edges, 60, 185); // 元の値
         cv.Canny(blurred, edges, 5, 20);
-        
+
         // 4. 輪郭を構成する点群を抽出する
         cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
@@ -182,12 +187,12 @@ function applyPerspectiveCorrection(canvas)
         {
             let cnt         = contours.get(i);          // i番目の輪郭を取り出す
             let area        = cv.contourArea(cnt);      // その輪郭の面積を計算
-            
+
             if (area > minArea)
             {
                 let peri        = cv.arcLength(cnt, true);  // 輪郭の周囲の長さを計算
                 let tmpApprox   = new cv.Mat();             // 計算用の一時的な変数を作成
-            
+
 //              cv.approxPolyDP(cnt, tmpApprox, 0.02 * peri, true); // 輪郭を単純化する(元の値)
                 cv.approxPolyDP(cnt, tmpApprox, 0.08 * peri, true); // 輪郭を単純化する
 
@@ -197,7 +202,7 @@ function applyPerspectiveCorrection(canvas)
                     {
                         maxArea         = area;
                         maxContourIndex = i;
-                        
+
                         if (approx)
                         {
                             approx.delete();   // 古いapproxがあれば削除し、新しい一番を保存
@@ -218,25 +223,29 @@ function applyPerspectiveCorrection(canvas)
         }
 
         // 6. 見つかった結果を描画
-        if (maxContourIndex !== -1 && approx) 
+        if (maxContourIndex !== -1 && approx)
         {
             let color   = new cv.Scalar(255, 0, 0, 255);    // 赤色を定義 (R=255, G=0, B=0, Alpha=255)
             let points  = new cv.MatVector();               // 描画用のリストを作成（polylines関数はリスト形式を要求するため）
 
             points.push_back(approx);
-            
+
             // true: 線を閉じる（四角形にする）、4: 線の太さ
             cv.polylines(dst, points, true, color, 4);      // dst(元のカラー画像)の上に、赤い線を書き込む
-            
+
             points.delete();                                // 処理後は不要なので削除
         }
 
         cv.imshow(canvas, dst);     // 結果を表示
         // cv.imshow(canvas, edges);     // 結果を表示
 
-    } catch (err) {
+    }
+    catch (err)
+    {
         console.error("OpenCV処理エラー:", err);
-    } finally {
+    }
+    finally
+    {
         // メモリ解放
         if (src) src.delete();
         if (gray) gray.delete();
@@ -263,7 +272,7 @@ captureBtn.addEventListener('click', async () => {
     captureBtn.disabled         = true;
     clearBtn.disabled           = false;
     statusArea.textContent      = '画像をキャプチャしました。補正と文字認識を開始します...';
-    resultArea.innerHTML        = ''; 
+    resultArea.innerHTML        = '';
 
     // --- トリミング計算 ---
 
@@ -286,10 +295,10 @@ captureBtn.addEventListener('click', async () => {
     // 2. Canvasのサイズを「ビデオ全体」ではなく「切り抜くサイズ」に合わせる
     canvasElement.width  = cropW;
     canvasElement.height = cropH;
-    
+
     // 3. 映像を切り抜いて描画（一次トリミング：固定枠）
     const context = canvasElement.getContext('2d');
-    
+
     // drawImage(元画像, 元画像の開始X, 元画像の開始Y, 元画像の幅, 元画像の高さ, CanvasのX, CanvasのY, Canvasの幅, Canvasの高さ)
     // 9個の引数を使ってトリミングと貼り付けを行う
     context.drawImage(
@@ -314,7 +323,8 @@ captureBtn.addEventListener('click', async () => {
     canvasElement.style.display = 'block';
 
     // 5. OCR実行
-    try {
+    try
+    {
         const { data: { text } } = await Tesseract.recognize(
             canvasElement,
             'jpn',
@@ -332,7 +342,9 @@ captureBtn.addEventListener('click', async () => {
         p.innerText             = text;
         p.style.whiteSpace      = 'pre-wrap';
         resultArea.appendChild(p);
-    } catch (error) {
+    }
+    catch (error)
+    {
         console.error(error);
         statusArea.textContent  = 'エラー: 文字認識に失敗しました。';
     }
@@ -343,7 +355,7 @@ clearBtn.addEventListener('click', () => {
     // 1. UI状態のリセット
     captureBtn.disabled         = false;
     clearBtn.disabled           = true;
-    
+
     // 2. 表示のリセット（Canvasを隠してVideoを表示）
     videoElement.style.display  = 'block';
     cropGuide.style.display     = 'flex'; // 【追加】ガイド枠を再表示（flexで中央揃え維持）
