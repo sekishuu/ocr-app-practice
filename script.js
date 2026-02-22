@@ -152,8 +152,11 @@ function applyPerspectiveCorrection(canvas)
     let hierarchy   = null;     // 輪郭の階層情報（今回は使いませんが必須）
     let approx      = null;     // 輪郭を近似（カクカクに）した結果用
 
-    let srcTri      = null;
-    
+    let srcTri = null;
+
+    let dstTri      = null;     // ★ステップ②で作る「理想の四角形」
+    let M           = null;     // ★ステップ③で作る「変換行列（計算式）」
+
     try
     {
         src                 = cv.imread(canvas);    // 元のカラー画像
@@ -185,7 +188,6 @@ function applyPerspectiveCorrection(canvas)
 
         const minArea       = canvas.width * canvas.height * 0.05;   // 画面全体に対する面積の割合（5%以下の小さなゴミは無視する設定）
 
-        let tmpApprox       = new cv.Mat();                          // 計算用の一時的な変数を作成
         if (approx) approx.delete();
         approx              = new cv.Mat();
 
@@ -193,6 +195,8 @@ function applyPerspectiveCorrection(canvas)
         {
             let cnt     = contours.get(i);          // i番目の輪郭を取り出す
             let area    = cv.contourArea(cnt);      // その輪郭の面積を計算
+
+            let tmpApprox       = new cv.Mat();                          // 計算用の一時的な変数を作成
 
             if (area > minArea)
             {
@@ -241,7 +245,7 @@ function applyPerspectiveCorrection(canvas)
             points.delete();                                // 処理後は不要なので削除
         }
 
-        cv.imshow(canvas, dst);     // 結果を表示
+        // cv.imshow(canvas, dst);     // 結果を表示
         */
 // =========================================================
         // ★ステップ①：4つの頂点を整理して変換元の座標を作る
@@ -251,7 +255,7 @@ function applyPerspectiveCorrection(canvas)
         {
             let points = [];
 
-            // Open.CV用の配列　→　JSの配列に変換
+            // Open.CV用の配列 → JSの配列に変換
             for (let row = 0; row < 4; row++)
             {
                 points.push(
@@ -289,15 +293,43 @@ function applyPerspectiveCorrection(canvas)
                 }
             }
 
-            let orderedPoints = [tl, tr, br, bl];   //　結果を格納
-            // JSの配列　→　Open.CV用の配列に変換
-            srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, 
+            let orderedPoints = [tl, tr, br, bl];   // 結果を格納
+            // JSの配列 → Open.CV用の配列に変換
+            srcTri = cv.matFromArray(4, 1, cv.CV_32FC2,
                     [
                     orderedPoints[0].x, orderedPoints[0].y, // 左上
                     orderedPoints[1].x, orderedPoints[1].y, // 右上
                     orderedPoints[2].x, orderedPoints[2].y, // 右下
                     orderedPoints[3].x, orderedPoints[3].y  // 左下
                     ]);
+
+            // =========================================================
+            // 【追加】★ステップ②：変換先の座標（理想の四角形）を作る
+            // =========================================================
+            // Canvasの四隅（左上 0,0 〜 右下 width,height）を指定します。
+            dstTri = cv.matFromArray(4, 1, cv.CV_32FC2,
+                    [
+                    0, 0,                           // 左上
+                    canvas.width, 0,                // 右上
+                    canvas.width, canvas.height,    // 右下
+                    0, canvas.height,               // 左下
+                    ]);
+
+            // =========================================================
+            // 【追加】★ステップ③：①、②の情報を使って画像補正する計算処理を行う
+            // =========================================================
+            // getPerspectiveTransform で、歪んだ①を綺麗な②に変形するための「変換式」を作ります。
+            M = cv.getPerspectiveTransform(srcTri, dstTri);
+
+
+            // =========================================================
+            // 【追加】★ステップ④：計算された結果を使って、元のカメラ画像を変形させる
+            // =========================================================
+            // warpPerspective で、実際の画像(src)に変換式(M)を適用し、結果(dst)に出力します。
+            cv.warpPerspective(src, dst, M, new cv.Size(canvas.width, canvas.height));
+
+            // 変形後の真っ直ぐな画像をCanvasに表示します
+            cv.imshow(canvas, dst);
         }
         else
         {
@@ -321,6 +353,9 @@ function applyPerspectiveCorrection(canvas)
         if (hierarchy) hierarchy.delete();
         if (approx) approx.delete();
         if (srcTri) srcTri.delete();
+
+        if (dstTri) dstTri.delete();
+        if (M) M.delete();
     }
 }
 
@@ -377,11 +412,11 @@ captureBtn.addEventListener('click', async () => {
     applyPerspectiveCorrection(canvasElement);
 
     // グレースケール化を実行
-    // applyGrayscale(canvasElement);
+    applyGrayscale(canvasElement);
 
     // 二値化（白黒）を実行
     // しきい値は「128」
-    // applyBinarization(canvasElement, 128);
+    applyBinarization(canvasElement, 128);
 
     // 4. 表示の切り替え（Videoを隠してCanvasを表示）
     videoElement.style.display  = 'none';
