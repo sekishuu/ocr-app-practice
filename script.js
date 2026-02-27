@@ -142,20 +142,21 @@ function applyPerspectiveCorrection(canvas)
     }
 
     // 各処理に使う変数を宣言
-    let src         = null;     // 元の画像データ
-    let gray        = null;     // グレースケール画像用
-    let blurred     = null;     // ぼかし処理後の画像用
-    let edges       = null;     // エッジ（線画）画像用
+    let src                 = null;     // 元の画像データ
+    let gray                = null;     // グレースケール画像用
+    let blurred             = null;     // ぼかし処理後の画像用
+    let edges               = null;     // エッジ（線画）画像用
 
-    let dst         = null;     // 画面に表示する結果用（ここに赤枠を描く）
-    let contours    = null;     // 見つかった輪郭のリスト
-    let hierarchy   = null;     // 輪郭の階層情報（今回は使いませんが必須）
-    let approx      = null;     // 輪郭を近似（カクカクに）した結果用
+    let dst                 = null;     // 画面に表示する結果用（ここに赤枠を描く）
+    let contours            = null;     // 見つかった輪郭のリスト
+    let hierarchy           = null;     // 輪郭の階層情報（今回は使いませんが必須）
+    let approx              = null;     // 輪郭を近似（カクカクに）した結果用
 
-    let srcTri = null;
+    let srcTri              = null;
 
-    let dstTri      = null;     // ★ステップ②で作る「理想の四角形」
-    let M           = null;     // ★ステップ③で作る「変換行列（計算式）」
+    let dstTri              = null;     // ★ステップ②で作る「理想の四角形」
+    let transformMatrix     = null;     // ★ステップ③で作る「変換行列（計算式）」
+    let binary              = null;     // 適応的二値化の出力用
 
     try
     {
@@ -193,17 +194,17 @@ function applyPerspectiveCorrection(canvas)
 
         for (let i = 0; i < contours.size(); ++i)       // contours.sizeは見つかった図形の数
         {
-            let cnt     = contours.get(i);          // i番目の輪郭を取り出す
-            let area    = cv.contourArea(cnt);      // その輪郭の面積を計算
+            let cnt         = contours.get(i);          // i番目の輪郭を取り出す
+            let area        = cv.contourArea(cnt);      // その輪郭の面積を計算
 
-            let tmpApprox       = new cv.Mat();                          // 計算用の一時的な変数を作成
+            let tmpApprox   = new cv.Mat();                          // 計算用の一時的な変数を作成
 
             if (area > minArea)
             {
                 let peri    = cv.arcLength(cnt, true);  // 輪郭の周囲の長さを計算
 
-             cv.approxPolyDP(cnt, tmpApprox, 0.02 * peri, true); // 輪郭を単純化する(元の値)
-//                cv.approxPolyDP(cnt, tmpApprox, 0.08 * peri, true); // 輪郭を単純化する
+                cv.approxPolyDP(cnt, tmpApprox, 0.02 * peri, true); // 輪郭を単純化する(元の値)
+//              cv.approxPolyDP(cnt, tmpApprox, 0.08 * peri, true); // 輪郭を単純化する
 
                 if (tmpApprox.rows === 4) // 頂点の数が4つ（＝四角形）かどうか判定
                 {
@@ -247,10 +248,8 @@ function applyPerspectiveCorrection(canvas)
 
         // cv.imshow(canvas, dst);     // 結果を表示
         */
-// =========================================================
-        // ★ステップ①：4つの頂点を整理して変換元の座標を作る
-        // =========================================================
 
+        // 4つの頂点を整理して変換元の座標を作る
         if (maxContourIndex !== -1 && approx)
         {
             let points = [];
@@ -297,43 +296,42 @@ function applyPerspectiveCorrection(canvas)
             // JSの配列 → Open.CV用の配列に変換
             srcTri = cv.matFromArray(4, 1, cv.CV_32FC2,
                     [
-                    orderedPoints[0].x, orderedPoints[0].y, // 左上
-                    orderedPoints[1].x, orderedPoints[1].y, // 右上
-                    orderedPoints[2].x, orderedPoints[2].y, // 右下
-                    orderedPoints[3].x, orderedPoints[3].y  // 左下
+                        orderedPoints[0].x, orderedPoints[0].y, // 左上
+                        orderedPoints[1].x, orderedPoints[1].y, // 右上
+                        orderedPoints[2].x, orderedPoints[2].y, // 右下
+                        orderedPoints[3].x, orderedPoints[3].y  // 左下
                     ]);
 
-            // =========================================================
-            // 【追加】★ステップ②：変換先の座標（理想の四角形）を作る
-            // =========================================================
-            // Canvasの四隅（左上 0,0 〜 右下 width,height）を指定します。
+            // 変換先の座標（理想の四角形）を作る
             dstTri = cv.matFromArray(4, 1, cv.CV_32FC2,
                     [
-                    0, 0,                           // 左上
-                    canvas.width, 0,                // 右上
-                    canvas.width, canvas.height,    // 右下
-                    0, canvas.height,               // 左下
+                        0, 0,                           // 左上
+                        canvas.width, 0,                // 右上
+                        canvas.width, canvas.height,    // 右下
+                        0, canvas.height,               // 左下
                     ]);
 
-            // =========================================================
-            // 【追加】★ステップ③：①、②の情報を使って画像補正する計算処理を行う
-            // =========================================================
-            // getPerspectiveTransform で、歪んだ①を綺麗な②に変形するための「変換式」を作ります。
-            M = cv.getPerspectiveTransform(srcTri, dstTri);
+            // ①、②の情報を使って画像補正する計算処理を行う
+            transformMatrix = cv.getPerspectiveTransform(srcTri, dstTri);
 
+            // 計算された結果を使って、元のカメラ画像を変形させる
+            cv.warpPerspective(src, dst, transformMatrix, new cv.Size(canvas.width, canvas.height));
 
-            // =========================================================
-            // 【追加】★ステップ④：計算された結果を使って、元のカメラ画像を変形させる
-            // =========================================================
-            // warpPerspective で、実際の画像(src)に変換式(M)を適用し、結果(dst)に出力します。
-            cv.warpPerspective(src, dst, M, new cv.Size(canvas.width, canvas.height));
+            // 変形後の画像(dst)をグレー画像(gray)に変換
+            cv.cvtColor(dst, gray, cv.COLOR_RGBA2GRAY, 0);
 
-            // 変形後の真っ直ぐな画像をCanvasに表示します
-            cv.imshow(canvas, dst);
+            // 二値化処理後の出力先の変数
+            binary = new cv.Mat();
+            // グレー画像(gray)を元に適応的二値化を行い結果を新しい変数(binary)に出力
+            cv.adaptiveThreshold(gray, binary, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 21, 10);
+
+            // 画面には二値化された結果を反映
+            cv.imshow(canvas, binary); //
+
+            // cv.imshow(canvas, dst); // 補正後の画像を表示
         }
         else
         {
-            // 見つからない場合は元の画像を表示して終了
             cv.imshow(canvas, src); // 見つからない場合は元の画像を表示
         }
     }
@@ -355,7 +353,8 @@ function applyPerspectiveCorrection(canvas)
         if (srcTri) srcTri.delete();
 
         if (dstTri) dstTri.delete();
-        if (M) M.delete();
+        if (transformMatrix) transformMatrix.delete();
+        if (binary) binary.delete();
     }
 }
 
@@ -412,11 +411,11 @@ captureBtn.addEventListener('click', async () => {
     applyPerspectiveCorrection(canvasElement);
 
     // グレースケール化を実行
-    applyGrayscale(canvasElement);
+    // applyGrayscale(canvasElement);
 
     // 二値化（白黒）を実行
     // しきい値は「128」
-    applyBinarization(canvasElement, 128);
+    // applyBinarization(canvasElement, 128);
 
     // 4. 表示の切り替え（Videoを隠してCanvasを表示）
     videoElement.style.display  = 'none';
