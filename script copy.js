@@ -16,9 +16,8 @@ function onOpenCvReady()
 {
     console.log('OpenCV.js is ready');
     isOpenCvReady = true;
-
-    // Paper.jsを起動
-    paper.setup(canvasElement);
+    var canvas = document.getElementById('myCanvas');
+    paper.setup(canvas);
     statusArea.textContent = '準備完了です。読み取りたい書類を写してください。';
 }
 
@@ -135,29 +134,6 @@ function applyBinarization(canvas, threshold = 128)
     ctx.putImageData(imageData, 0, 0);
 }
 
-// ====== ここから追記(2026/4/16) ======
-
-// 点と直線の距離を計算する関数
-function getDistance(targetX, targetY, lineStartX, lineStartY, lineEndX, lineEndY)
-{
-    // 始点・終点・対象点の3点から面積を求める
-    // (終点 - 始点) × (対象点 - 始点) － (対象点 - 始点) × (終点 - 始点)
-    // ※面積を求める際の÷２と下記の高さを求める計算の×２は不要なので省略
-    const area = Math.abs(
-        (lineEndX - lineStartX) * (targetY - lineStartY) - (targetX - lineStartX) * (lineEndY - lineStartY)
-    );
-
-    // 2つの座標から三平方の定理（a² + b² = c²）を使って、底辺の長さを求める
-    const bottom = Math.sqrt(
-        Math.pow(lineEndX - lineStartX, 2) + Math.pow(lineEndY - lineStartY, 2)
-    );
-
-    // 面積 ÷ 底辺 の計算を行い、対象点までの高さ（直線からの垂直な距離）を返す
-    return area / bottom;
-}
-
- // ====== 追記ここまで(2026/4/16) ======
-
 function applyPerspectiveCorrection(canvas)
 {
     // OpenCVの準備チェック
@@ -265,183 +241,101 @@ function applyPerspectiveCorrection(canvas)
             cnt.delete();   // メモリ解放
         }
 
-        var points = [];
-
-        // Open.CV用の配列 → JSの配列に変換
-        for (var i = 0; i < approx.rows; i++)
+        // 6. 見つかった結果を描画
+        if (maxContourIndex !== -1 && approx)
         {
-            points.push(
-            {
-                x: approx.data32S[i * 2],
-                y: approx.data32S[i * 2 + 1]
-            });
+            let color   = new cv.Scalar(255, 0, 0, 255);    // 赤色を定義 (R=255, G=0, B=0, Alpha=255)
+            let points  = new cv.MatVector();               // 描画用のリストを作成（polylines関数はリスト形式を要求するため）
+
+            points.push_back(approx);
+
+            // true: 線を閉じる（四角形にする）、4: 線の太さ
+            cv.polylines(dst, points, true, color, 4);      // dst(元のカラー画像)の上に、赤い線を書き込む
+
+            points.delete();                                // 処理後は不要なので削除
         }
 
-        // 2. 四隅の変数を最初の点で初期化
-        var topLeft     = points[0]; // 左上 
-        var topRight    = points[0]; // 右上 
-        var bottomRight = points[0]; // 右下 
-        var bottomLeft  = points[0]; // 左下 
+         cv.imshow(canvas, dst);     // 結果を表示
 
-        // 3. 全ての点を走査して四隅を確定させる
-        for (var j = 1; j < points.length; j++)
-        {
-            var targetPoint = points[j];
+// --- 準備：色の定義 ---
+var redColor   = new cv.Scalar(255, 0, 0, 255); // OpenCVが見つけた「形」
+var greenColor = new cv.Scalar(0, 255, 0, 255); // 独自計算した「四隅」
 
-            // 左上：x + y が最小となる点
-            if ((targetPoint.x + targetPoint.y) < (topLeft.x + topLeft.y))
-            {
-                topLeft = targetPoint;
-            }
+// 1. 赤い線の描画（OpenCVの近似多角形：approx）
+var redPoints = new cv.MatVector();
+redPoints.push_back(approx);
+cv.polylines(dst, redPoints, true, redColor, 2); // 少し細めに描画
+redPoints.delete();
 
-            // 右上：x - y が最大となる点
-            if ((targetPoint.x - targetPoint.y) > (topRight.x - topRight.y))
-            {
-                topRight = targetPoint;
-            }
+// 2. 緑色の線の描画（計算した四隅：topLeft等）
+var vertices = new Int32Array([
+    topLeft.x,     topLeft.y,
+    topRight.x,    topRight.y,
+    bottomRight.x, bottomRight.y,
+    bottomLeft.x,  bottomLeft.y
+]);
+var cornerMat = cv.matFromArray(4, 1, cv.CV_32SC2, vertices);
+var greenPoints = new cv.MatVector();
+greenPoints.push_back(cornerMat);
+cv.polylines(dst, greenPoints, true, greenColor, 5); // 太めに描画して目立たせる
 
-            // 右下：x + y が最大となる点
-            if ((targetPoint.x + targetPoint.y) > (bottomRight.x + bottomRight.y))
-            {
-                bottomRight = targetPoint;
-            }
+// 後片付け
+cornerMat.delete();
+greenPoints.delete();
 
-            // 左下：x - y が最小となる点
-            if ((targetPoint.x - targetPoint.y) < (bottomLeft.x - bottomLeft.y))
-            {
-                bottomLeft = targetPoint;
-            }
-        }
+// 3. 最後に一回だけ表示
+cv.imshow('outputCanvas', dst);
 
-        // --- 色の定義 ---
-        var redColor   = new cv.Scalar(255, 0, 0, 255); // OpenCVが見つけた「形」→赤
-        var greenColor = new cv.Scalar(0, 255, 0, 255); // 独自計算した「四隅」　→緑
 
-        // 1. 赤い線の描画（多角形：approx）
-        var redPoints = new cv.MatVector();
 
-        redPoints.push_back(approx);
-
-        cv.polylines(dst, redPoints, true, redColor, 2); 
-
-        redPoints.delete(); // メモリ解放
-
-        // 2. 緑色の線の描画（計算した四隅：topLeft等）
-        var vertices    = new Int32Array(
-            [
-            topLeft.x
-            ,topLeft.y
-            ,topRight.x
-            ,topRight.y
-            ,bottomRight.x
-            ,bottomRight.y
-            ,bottomLeft.x 
-            ,bottomLeft.y
-            ]);
-        var cornerMat   = cv.matFromArray(4, 1, cv.CV_32SC2, vertices);
-        var greenPoints = new cv.MatVector();
-
-        greenPoints.push_back(cornerMat);
-
-        cv.polylines(dst, greenPoints, true, greenColor, 3); 
-
-        // メモリ解放
-        cornerMat.delete();
-        greenPoints.delete();
         
-        // 1. 点を振り分けるための4つのグループ（配列）を用意する
-        let topGroup        = []; // 上辺の仲間が入る箱
-        let rightGroup      = []; // 右辺の仲間が入る箱
-        let bottomGroup     = []; // 下辺の仲間が入る箱
-        let leftGroup       = []; // 左辺の仲間が入る箱
+// 1. OpenCVのMatデータから扱いやすい座標オブジェクトの配列を作成
+var points = [];
+for (var i = 0; i < approx.rows; i++)
+{
+    points.push(
+    {
+        x: approx.data32S[i * 2],
+        y: approx.data32S[i * 2 + 1]
+    });
+}
 
-        // 一番高い点探索用の変数（最大距離と該当座標）を初期化
-        let topPeakPoint    = topLeft;      // 上辺のピーク（初期値は左上）
-        let maxTopDist      = -1;           // 上辺の最大距離
-        let bottomPeakPoint = bottomLeft;   // 下辺のピーク（初期値は左下）
-        let maxBottomDist   = -1;           // 下辺の最大距離
+// 2. 四隅の変数を最初の点で初期化
+var topLeft     = points[0]; // 左上 
+var topRight    = points[0]; // 右上 
+var bottomRight = points[0]; // 右下 
+var bottomLeft  = points[0]; // 左下 
 
-        // 2. approx（赤線）の構成点である points を1つずつ調べていくループ
-        for (let i = 0; i < points.length; i++)
-        {
-            let targetPoint = points[i];
+// 3. 全ての点を走査して四隅を確定させる
+for (var j = 1; j < points.length; j++)
+{
+    var targetPoint = points[j];
 
-            // 1. 四隅を結んでできる4本の基準線（上辺・右辺・下辺・左辺）それぞれに対して、
-            //    現在の点（targetPoint）がどれくらい離れているかを getDistance で計算
-            let distTop     = getDistance(targetPoint.x, targetPoint.y, topLeft.x,      topLeft.y,      topRight.x,     topRight.y);
-            let distRight   = getDistance(targetPoint.x, targetPoint.y, topRight.x,     topRight.y,     bottomRight.x,  bottomRight.y);
-            let distBottom  = getDistance(targetPoint.x, targetPoint.y, bottomRight.x,  bottomRight.y,  bottomLeft.x,   bottomLeft.y);
-            let distLeft    = getDistance(targetPoint.x, targetPoint.y, bottomLeft.x,   bottomLeft.y,   topLeft.x,      topLeft.y);
+    // 左上：x + y が最小となる点
+    if ((targetPoint.x + targetPoint.y) < (topLeft.x + topLeft.y))
+    {
+        topLeft = targetPoint;
+    }
 
-            // 2. 4つの距離のうち、一番数字が小さい（＝一番近い）距離はどれかを探す
-            let minDist     = Math.min(distTop, distRight, distBottom, distLeft);
+    // 右上：x - y が最大となる点
+    if ((targetPoint.x - targetPoint.y) > (topRight.x - topRight.y))
+    {
+        topRight = targetPoint;
+    }
 
-            // 3. 一番近かった辺のグループに挿入すると同時に、最大値を更新する
-            // 上辺
-            if (minDist === distTop)
-            {
-                topGroup.push(targetPoint);
-                // 上辺グループと判定されたなら、現在の最大値と比べる
-                if (distTop > maxTopDist)
-                {
-                    maxTopDist      = distTop;
-                    topPeakPoint    = targetPoint; // 最大値を更新
-                }
-            }
-            // 下辺
-            else if (minDist === distBottom)
-            {
-                bottomGroup.push(targetPoint);
-                // 下辺グループと判定されたなら、最大値と比べる
-                if (distBottom > maxBottomDist)
-                {
-                    maxBottomDist   = distBottom;
-                    bottomPeakPoint = targetPoint; // 最大値を更新
-                }
-            }
-            // 右辺
-            else if (minDist === distRight)
-            {
-                rightGroup.push(targetPoint);
-            }
-            // 左辺
-            else
-            {
-                leftGroup.push(targetPoint);
-            }
-        }
+    // 右下：x + y が最大となる点
+    if ((targetPoint.x + targetPoint.y) > (bottomRight.x + bottomRight.y))
+    {
+        bottomRight = targetPoint;
+    }
 
-        // 4. 紫色（マゼンタ）を定義 (R=255, G=0, B=255, Alpha=255)
-        let purpleColor = new cv.Scalar(255, 0, 255, 255);
-        
-        // 5. 見つけた2つのピーク座標を、OpenCVが読める形式（cv.Point）に変換する
-        let ptTop       = new cv.Point(topPeakPoint.x, topPeakPoint.y);
-        let ptBottom    = new cv.Point(bottomPeakPoint.x, bottomPeakPoint.y);
-        
-        // 6. dst画像の上に、上辺ピークから下辺ピークへ向かう紫色の直線を引く（最後の数字「3」は線の太さ）
-        cv.line(dst, ptTop, ptBottom, purpleColor, 3);
-        
-        // 7. 紫の線が書き込まれた最新の dst を、もう一度画面に表示して結果を更新する
-        cv.imshow(canvas, dst);
+    // 左下：x - y が最小となる点
+    if ((targetPoint.x - targetPoint.y) < (bottomLeft.x - bottomLeft.y))
+    {
+        bottomLeft = targetPoint;
+    }
+}
 
-
-
-        // // 6. 見つかった結果を描画
-        // if (maxContourIndex !== -1 && approx)
-        // {
-        //     let color   = new cv.Scalar(255, 0, 0, 255);    // 赤色を定義 (R=255, G=0, B=0, Alpha=255)
-        //     let points  = new cv.MatVector();               // 描画用のリストを作成（polylines関数はリスト形式を要求するため）
-
-        //     points.push_back(approx);
-
-        //     // true: 線を閉じる（四角形にする）、4: 線の太さ
-        //     cv.polylines(dst, points, true, color, 4);      // dst(元のカラー画像)の上に、赤い線を書き込む
-
-        //     points.delete();                                // 処理後は不要なので削除
-        // }
-
-        //  cv.imshow(canvas, dst);     // 結果を表示
-        
 /*
 // ★一旦コメントアウト★
         // 4つの頂点を整理して変換元の座標を作る
