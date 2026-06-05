@@ -18,7 +18,7 @@ function onOpenCvReady()
     isOpenCvReady = true;
 
     // Paper.jsを起動
-    paper.setup(canvasElement);
+    // paper.setup(canvasElement);
     statusArea.textContent = '準備完了です。読み取りたい書類を写してください。';
 }
 
@@ -58,7 +58,8 @@ async function startCamera()
 }
 
 // グレースケール化処理を行う関数
-function applyGrayscale(canvas) {
+function applyGrayscale(canvas)
+{
     const ctx            = canvas.getContext('2d');
 
     // 【1. データの取得】
@@ -157,6 +158,16 @@ function getDistance(targetX, targetY, lineStartX, lineStartY, lineEndX, lineEnd
 }
 
  // ====== 追記ここまで(2026/4/16) ======
+
+// ====== ここから追記：2点間の直線距離を計算する関数 (2026/4/29実装) ======
+
+
+function getLineDistance(startPoint, endPoint)
+{
+    // 2つの座標から三平方の定理（a² + b² = c²）を使って、底辺の長さを求める
+    return Math.sqrt(Math.pow(endPoint.x - startPoint.x, 2) + Math.pow(endPoint.y - startPoint.y, 2));
+}
+// ====== 追記ここまで ======
 
 function applyPerspectiveCorrection(canvas)
 {
@@ -278,10 +289,10 @@ function applyPerspectiveCorrection(canvas)
         }
 
         // 2. 四隅の変数を最初の点で初期化
-        var topLeft     = points[0]; // 左上 
-        var topRight    = points[0]; // 右上 
-        var bottomRight = points[0]; // 右下 
-        var bottomLeft  = points[0]; // 左下 
+        var topLeft     = points[0]; // 左上
+        var topRight    = points[0]; // 右上
+        var bottomRight = points[0]; // 右下
+        var bottomLeft  = points[0]; // 左下
 
         // 3. 全ての点を走査して四隅を確定させる
         for (var j = 1; j < points.length; j++)
@@ -314,15 +325,15 @@ function applyPerspectiveCorrection(canvas)
         }
 
         // --- 色の定義 ---
-        var redColor   = new cv.Scalar(255, 0, 0, 255); // OpenCVが見つけた「形」→赤
-        var greenColor = new cv.Scalar(0, 255, 0, 255); // 独自計算した「四隅」　→緑
+        var redColor    = new cv.Scalar(255, 0, 0, 255); // OpenCVが見つけた「形」→赤
+        var greenColor  = new cv.Scalar(0, 255, 0, 255); // 独自計算した「四隅」　→緑
 
         // 1. 赤い線の描画（多角形：approx）
-        var redPoints = new cv.MatVector();
+        var redPoints   = new cv.MatVector();
 
         redPoints.push_back(approx);
 
-        cv.polylines(dst, redPoints, true, redColor, 2); 
+        cv.polylines(dst, redPoints, true, redColor, 2);
 
         redPoints.delete(); // メモリ解放
 
@@ -335,7 +346,7 @@ function applyPerspectiveCorrection(canvas)
             ,topRight.y
             ,bottomRight.x
             ,bottomRight.y
-            ,bottomLeft.x 
+            ,bottomLeft.x
             ,bottomLeft.y
             ]);
         var cornerMat   = cv.matFromArray(4, 1, cv.CV_32SC2, vertices);
@@ -343,12 +354,12 @@ function applyPerspectiveCorrection(canvas)
 
         greenPoints.push_back(cornerMat);
 
-        cv.polylines(dst, greenPoints, true, greenColor, 3); 
+        cv.polylines(dst, greenPoints, true, greenColor, 3);
 
         // メモリ解放
         cornerMat.delete();
         greenPoints.delete();
-        
+
         // 1. 点を振り分けるための4つのグループ（配列）を用意する
         let topGroup        = []; // 上辺の仲間が入る箱
         let rightGroup      = []; // 右辺の仲間が入る箱
@@ -413,17 +424,295 @@ function applyPerspectiveCorrection(canvas)
 
         // 4. 紫色（マゼンタ）を定義 (R=255, G=0, B=255, Alpha=255)
         let purpleColor = new cv.Scalar(255, 0, 255, 255);
-        
+
         // 5. 見つけた2つのピーク座標を、OpenCVが読める形式（cv.Point）に変換する
-        let ptTop       = new cv.Point(topPeakPoint.x, topPeakPoint.y);
-        let ptBottom    = new cv.Point(bottomPeakPoint.x, bottomPeakPoint.y);
-        
+        let ptTop       = new cv.Point(topPeakPoint.x,      topPeakPoint.y);
+        let ptBottom    = new cv.Point(bottomPeakPoint.x,   bottomPeakPoint.y);
+
         // 6. dst画像の上に、上辺ピークから下辺ピークへ向かう紫色の直線を引く（最後の数字「3」は線の太さ）
         cv.line(dst, ptTop, ptBottom, purpleColor, 3);
-        
-        // 7. 紫の線が書き込まれた最新の dst を、もう一度画面に表示して結果を更新する
-        cv.imshow(canvas, dst);
 
+        // 7. 紫の線が書き込まれた最新の dst を、もう一度画面に表示して結果を更新する
+        // cv.imshow(canvas, dst);
+
+// ====== ここから追記：比率計算と左半分の補正処理（変数名改善版） (2026/4/29実装) ======
+
+        let leftSideTopLength   = getLineDistance(topLeft,      topPeakPoint);  // 左半分の上辺の長さ
+        let rightSideTopLength  = getLineDistance(topPeakPoint, topRight);      // 右半分の上辺の長さ
+
+        // 全体の道のりに対する、左半分の辺の長さの比率を算出
+        let leftRatio           = leftSideTopLength / (leftSideTopLength + rightSideTopLength);
+
+        // キャンバスの横幅に比率を掛け合わせ、補正後の左半分の理想的な幅を決定
+        let targetLeftWidth     = canvas.width * leftRatio;
+
+ // ====== ここからコメントアウト：右半分のみ補正表示を確認するため、左半分のみ表示処理はいったん停止 ======
+
+        // // targetLeftWidthは小数になる可能性があるため、画像幅として使える整数に変換する
+        // let leftOnlyWidth = Math.round(targetLeftWidth);
+
+        // // 念のため、幅が0以下・canvas幅超えにならないように調整する
+        // leftOnlyWidth = Math.max(1, Math.min(canvas.width, leftOnlyWidth));
+
+        // // 補正に使用する「元の画像」の左半分4頂点（左上、上辺ピーク、下辺ピーク、左下）を配列にする
+        // let leftSrcCoords       =
+        //     [
+        //         topLeft.x,          topLeft.y,          // 左上
+        //         topPeakPoint.x,     topPeakPoint.y,     // 右上
+        //         bottomPeakPoint.x,  bottomPeakPoint.y,  // 右下
+        //         bottomLeft.x,       bottomLeft.y        // 左下
+        //     ];
+
+        // // 元の画像の4頂点をOpenCVで計算できる形式（32ビット浮動小数点数）に変換
+        // let leftSrcTri          = cv.matFromArray(4, 1, cv.CV_32FC2, leftSrcCoords);
+
+        // // 左側だけの補正先座標を作成する
+        // let leftOnlyDstCoords =
+        //     [
+        //         0,              0,              // 左上
+        //         leftOnlyWidth,  0,              // 右上
+        //         leftOnlyWidth,  canvas.height,  // 右下
+        //         0,              canvas.height   // 左下
+        //     ];
+
+        // // 左側だけの補正先座標をOpenCV用の形式に変換する
+        // let leftOnlyDstTri = cv.matFromArray(4, 1, cv.CV_32FC2, leftOnlyDstCoords);
+
+        // // 左側だけを補正するための変換行列を作成する
+        // let leftOnlyMatrix = cv.getPerspectiveTransform(leftSrcTri, leftOnlyDstTri);
+
+        // // 左側だけの補正画像を格納する変数を作成する
+        // let warpedLeftOnly = new cv.Mat();
+
+        // // 右側を黒くするため、最終表示用の黒い画像を作成する
+        // let leftOnlyResult = new cv.Mat(canvas.height, canvas.width, src.type(), new cv.Scalar(0, 0, 0, 255));
+
+        // // 左側だけを、leftOnlyWidthの幅で補正する
+        // cv.warpPerspective(src, warpedLeftOnly, leftOnlyMatrix, new cv.Size(leftOnlyWidth, canvas.height), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 255));
+
+        // // 黒い画像の左側だけを貼り付け対象にする
+        // let leftRoi = leftOnlyResult.roi(new cv.Rect(0, 0, leftOnlyWidth, canvas.height));
+
+        // // 補正した左側画像を、黒い画像の左側に貼り付ける
+        // warpedLeftOnly.copyTo(leftRoi);
+
+        // // 最終結果をCanvasに表示する
+        // cv.imshow(canvas, leftOnlyResult);
+
+        // // メモリの解放
+        // leftRoi.delete();
+        // leftOnlyResult.delete();
+        // warpedLeftOnly.delete();
+        // leftOnlyMatrix.delete();
+        // leftOnlyDstTri.delete();
+        // leftSrcTri.delete();
+
+
+ // ====== ここから追記(5/15)：右半分だけを補正して左側を黒くする処理 ======
+
+        // // targetLeftWidthは小数になる可能性があるため、画像幅として使える整数に変換する
+        // let leftOnlyWidth   = Math.round(targetLeftWidth);
+
+        // // 右半分の幅が0にならないように、左側の幅はcanvas幅より1px小さい範囲までに制限する
+        // leftOnlyWidth       = Math.max(1, Math.min(canvas.width - 1, leftOnlyWidth));
+
+        // // 右半分の補正後の幅を算出する
+        // let rightOnlyWidth  = canvas.width - leftOnlyWidth;
+
+        // // 補正に使用する「元の画像」の右半分4頂点（上辺ピーク、右上、右下、下辺ピーク）を配列にする
+        // let rightSrcCoords =
+        //     [
+        //         topPeakPoint.x,     topPeakPoint.y,     // 左上
+        //         topRight.x,         topRight.y,         // 右上
+        //         bottomRight.x,      bottomRight.y,      // 右下
+        //         bottomPeakPoint.x,  bottomPeakPoint.y   // 左下
+        //     ];
+
+        // // 元の画像の右半分4頂点をOpenCVで計算できる形式に変換する
+        // let rightSrcTri     = cv.matFromArray(4, 1, cv.CV_32FC2, rightSrcCoords);
+
+        // // 右側だけの補正先座標を作成する
+        // let rightOnlyDstCoords =
+        //     [
+        //         0,               0,              // 左上
+        //         rightOnlyWidth,  0,              // 右上
+        //         rightOnlyWidth,  canvas.height,  // 右下
+        //         0,               canvas.height   // 左下
+        //     ];
+
+        // // 右側だけの補正先座標をOpenCV用の形式に変換する
+        // let rightOnlyDstTri = cv.matFromArray(4, 1, cv.CV_32FC2, rightOnlyDstCoords);
+
+        // // 右側だけを補正するための変換行列を作成する
+        // let rightOnlyMatrix = cv.getPerspectiveTransform(rightSrcTri, rightOnlyDstTri);
+
+        // // 右側だけの補正画像を格納する変数を作成する
+        // let warpedRightOnly = new cv.Mat();
+
+        // // 左側を黒くするため、最終表示用の黒い画像を作成する
+        // let rightOnlyResult = new cv.Mat(canvas.height, canvas.width, src.type(), new cv.Scalar(0, 0, 0, 255));
+
+        // // 右側だけを、rightOnlyWidthの幅で補正する
+        // cv.warpPerspective(src, warpedRightOnly, rightOnlyMatrix, new cv.Size(rightOnlyWidth, canvas.height), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 255));
+
+        // // 黒い画像の右側だけを貼り付け対象にする
+        // let rightRoi        = rightOnlyResult.roi(new cv.Rect(leftOnlyWidth, 0, rightOnlyWidth, canvas.height));
+
+        // // 補正した右側画像を、黒い画像の右側に貼り付ける
+        // warpedRightOnly.copyTo(rightRoi);
+
+        // // 最終結果をCanvasに表示する
+        // cv.imshow(canvas, rightOnlyResult);
+
+        // // メモリの解放
+        // rightRoi.delete();
+        // rightOnlyResult.delete();
+        // warpedRightOnly.delete();
+        // rightOnlyMatrix.delete();
+        // rightOnlyDstTri.delete();
+        // rightSrcTri.delete();
+
+        // ====== 追記ここまで：右半分だけを補正して左側を黒くする処理 ======
+
+
+        // ====== ここからコメントアウト：左右結合テスト用処理 ======
+        // ※右半分だけの補正表示が正常に動いたら、
+        //   上の「右半分だけを補正して左側を黒くする処理」をコメントアウトし、
+        //   このブロックのコメントアウトを解除して結合テストを行う。
+
+
+        // ====== ここから追記：左右をそれぞれ補正して1枚に結合する処理 ======
+
+        // targetLeftWidthは小数になる可能性があるため、画像幅として使える整数に変換する
+        let leftOnlyWidth   = Math.round(targetLeftWidth);
+
+        // 左右どちらかの幅が0にならないように調整する
+        leftOnlyWidth       = Math.max(1, Math.min(canvas.width - 1, leftOnlyWidth));
+
+        // 右側の幅を算出する
+        let rightOnlyWidth  = canvas.width - leftOnlyWidth;
+
+
+        // ----- 左半分の補正処理 -----
+
+        // 補正に使用する「元の画像」の左半分4頂点（左上、上辺ピーク、下辺ピーク、左下）を配列にする
+        let leftSrcCoords =
+            [
+                topLeft.x,          topLeft.y,          // 左上
+                topPeakPoint.x,     topPeakPoint.y,     // 右上
+                bottomPeakPoint.x,  bottomPeakPoint.y,  // 右下
+                bottomLeft.x,       bottomLeft.y        // 左下
+            ];
+
+        // 左半分の変換元座標をOpenCV用の形式に変換する
+        let leftSrcTri = cv.matFromArray(4, 1, cv.CV_32FC2, leftSrcCoords);
+
+        // 左半分の補正先座標を作成する
+        let leftOnlyDstCoords =
+            [
+                0,              0,              // 左上
+                leftOnlyWidth,  0,              // 右上
+                leftOnlyWidth,  canvas.height,  // 右下
+                0,              canvas.height   // 左下
+            ];
+
+        // 左半分の補正先座標をOpenCV用の形式に変換する
+        let leftOnlyDstTri = cv.matFromArray(4, 1, cv.CV_32FC2, leftOnlyDstCoords);
+
+        // 左半分を補正するための変換行列を作成する
+        let leftOnlyMatrix = cv.getPerspectiveTransform(leftSrcTri, leftOnlyDstTri);
+
+        // 左半分の補正画像を格納する変数を作成する
+        let warpedLeftOnly = new cv.Mat();
+
+        // 左半分だけを、leftOnlyWidthの幅で補正する
+        cv.warpPerspective(src, warpedLeftOnly, leftOnlyMatrix, new cv.Size(leftOnlyWidth, canvas.height), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 255));
+
+
+        // ----- 右半分の補正処理 -----
+
+        // 補正に使用する「元の画像」の右半分4頂点（上辺ピーク、右上、右下、下辺ピーク）を配列にする
+        let rightSrcCoords =
+            [
+                topPeakPoint.x,     topPeakPoint.y,     // 左上
+                topRight.x,         topRight.y,         // 右上
+                bottomRight.x,      bottomRight.y,      // 右下
+                bottomPeakPoint.x,  bottomPeakPoint.y   // 左下
+            ];
+
+        // 右半分の変換元座標をOpenCV用の形式に変換する
+        let rightSrcTri = cv.matFromArray(4, 1, cv.CV_32FC2, rightSrcCoords);
+
+        // 右半分の補正先座標を作成する
+        let rightOnlyDstCoords =
+            [
+                0,               0,              // 左上
+                rightOnlyWidth,  0,              // 右上
+                rightOnlyWidth,  canvas.height,  // 右下
+                0,               canvas.height   // 左下
+            ];
+
+        // 右半分の補正先座標をOpenCV用の形式に変換する
+        let rightOnlyDstTri = cv.matFromArray(4, 1, cv.CV_32FC2, rightOnlyDstCoords);
+
+        // 右半分を補正するための変換行列を作成する
+        let rightOnlyMatrix = cv.getPerspectiveTransform(rightSrcTri, rightOnlyDstTri);
+
+        // 右半分の補正画像を格納する変数を作成する
+        let warpedRightOnly = new cv.Mat();
+
+        // 右半分だけを、rightOnlyWidthの幅で補正する
+        cv.warpPerspective(src, warpedRightOnly, rightOnlyMatrix, new cv.Size(rightOnlyWidth, canvas.height), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0, 0, 0, 255));
+
+
+        // ----- 左右の結合処理 -----
+
+        // 左右の補正画像を貼り付けるための全体画像を作成する
+        let mergedResult = new cv.Mat(canvas.height, canvas.width, src.type(), new cv.Scalar(0, 0, 0, 255));
+
+        // 黒い画像の左側だけを貼り付け対象にする
+        let leftRoi = mergedResult.roi(new cv.Rect(0, 0, leftOnlyWidth, canvas.height));
+
+        // 黒い画像の右側だけを貼り付け対象にする
+        let rightRoi = mergedResult.roi(new cv.Rect(leftOnlyWidth, 0, rightOnlyWidth, canvas.height));
+
+        // 補正した左半分を全体画像の左側に貼り付ける
+        warpedLeftOnly.copyTo(leftRoi);
+
+        // 補正した右半分を全体画像の右側に貼り付ける
+        warpedRightOnly.copyTo(rightRoi);
+
+        // 左右結合後の最終結果をCanvasに表示する
+        cv.imshow(canvas, mergedResult);
+
+
+        // ----- メモリの解放 -----
+
+        leftRoi.delete();
+        rightRoi.delete();
+
+        mergedResult.delete();
+
+        warpedLeftOnly.delete();
+        warpedRightOnly.delete();
+
+        leftOnlyMatrix.delete();
+        rightOnlyMatrix.delete();
+
+        leftOnlyDstTri.delete();
+        rightOnlyDstTri.delete();
+
+        leftSrcTri.delete();
+        rightSrcTri.delete();
+
+        // ====== 追記ここまで：左右をそれぞれ補正して1枚に結合する処理 ======
+
+
+        // ====== コメントアウトここまで：左右結合テスト用処理 ======
+
+
+
+        // ====== 追記ここまで ======
 
 
         // // 6. 見つかった結果を描画
@@ -441,7 +730,7 @@ function applyPerspectiveCorrection(canvas)
         // }
 
         //  cv.imshow(canvas, dst);     // 結果を表示
-        
+
 /*
 // ★一旦コメントアウト★
         // 4つの頂点を整理して変換元の座標を作る
@@ -528,7 +817,7 @@ function applyPerspectiveCorrection(canvas)
         {
             // cv.imshow(canvas, src); // 見つからない場合は元の画像を表示
         }
-*/        
+*/
     }
     catch (err)
     {
@@ -577,15 +866,15 @@ captureBtn.addEventListener('click', async () => {
 
     // B. 倍率を計算（実際のカメラ解像度 ÷ 画面上の表示サイズ）
     // 例: カメラが1920pxで、画面表示が384pxなら、倍率は5倍
-    const ratioX = videoElement.videoWidth / videoRect.width;
-    const ratioY = videoElement.videoHeight / videoRect.height;
+    const ratioX    = videoElement.videoWidth   / videoRect.width;
+    const ratioY    = videoElement.videoHeight  / videoRect.height;
 
     // C. 切り抜く座標とサイズを計算（実際の解像度ベースに変換）
     // (枠の左座標 - ビデオの左座標) * 倍率 = カメラ画像内でのX座標
-    const cropX = (guideRect.left - videoRect.left) * ratioX;
-    const cropY = (guideRect.top - videoRect.top) * ratioY;
-    const cropW = guideRect.width * ratioX;
-    const cropH = guideRect.height * ratioY;
+    const cropX     = (guideRect.left   - videoRect.left)   * ratioX;
+    const cropY     = (guideRect.top    - videoRect.top)    * ratioY;
+    const cropW     = guideRect.width   * ratioX;
+    const cropH     = guideRect.height  * ratioY;
 
     // 2. Canvasのサイズを「ビデオ全体」ではなく「切り抜くサイズ」に合わせる
     canvasElement.width  = cropW;
@@ -624,8 +913,10 @@ captureBtn.addEventListener('click', async () => {
             canvasElement,
             'jpn',
             {
-                logger: m => {
-                    if (m.status === 'recognizing text') {
+                logger: m =>
+                {
+                    if (m.status === 'recognizing text')
+                    {
                         statusArea.textContent = `文字を認識中... ${Math.floor(m.progress * 100)}%`;
                     }
                 }
